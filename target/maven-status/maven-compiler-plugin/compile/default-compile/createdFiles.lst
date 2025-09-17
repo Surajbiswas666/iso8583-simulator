@@ -1,0 +1,7 @@
+com\iso8583\model\Iso8583Field.class
+com\iso8583\config\WebConfig.class
+com\iso8583\controller\Iso8583Controller.class
+com\iso8583\service\Iso8583MessageBuilder.class
+com\iso8583\service\Iso8583FieldDefinitions.class
+com\iso8583\Iso8583SimulatorApplication.class
+com\iso8583\model\Iso8583Message.class

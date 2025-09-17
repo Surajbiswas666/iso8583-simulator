@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ISO 8583 Message Simulator</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .field-row {
+            margin-bottom: 10px;
+        }
+        .bitmap-display {
+            font-family: 'Courier New', monospace;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+        .raw-message {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .field-definition {
+            font-size: 12px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="text-center mb-4">
+                    <i class="fas fa-credit-card"></i> ISO 8583 Message Simulator
+                </h1>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Message Builder Panel -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0"><i class="fas fa-tools"></i> Message Builder</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="messageForm">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="mti" class="form-label">Message Type Indicator (MTI)</label>
+                                    <select class="form-select" id="mti" name="mti" required>
+                                        <option value="">Select MTI</option>
+                                        <option value="0100">0100 - Authorization Request</option>
+                                        <option value="0110">0110 - Authorization Response</option>
+                                        <option value="0200">0200 - Financial Transaction Request</option>
+                                        <option value="0210">0210 - Financial Transaction Response</option>
+                                        <option value="0400">0400 - Reversal Request</option>
+                                        <option value="0410">0410 - Reversal Response</option>
+                                        <option value="0800">0800 - Network Management Request</option>
+                                        <option value="0810">0810 - Network Management Response</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">Quick Actions</label><br>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="loadSampleMessage()">
+                                        <i class="fas fa-download"></i> Load Sample
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearForm()">
+                                        <i class="fas fa-broom"></i> Clear
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">ISO 8583 Fields</label>
+                                <div id="fieldsContainer">
+                                    <div th:each="field : ${fieldDefinitions}" class="field-row">
+                                        <div class="row align-items-center">
+                                            <div class="col-1">
+                                                <input type="checkbox" class="form-check-input" 
+                                                       th:id="'check_' + ${field.value.fieldNumber}"
+                                                       onchange="toggleField(this)">
+                                            </div>
+                                            <div class="col-2">
+                                                <strong th:text="${field.value.fieldNumber}">Field</strong>
+                                            </div>
+                                            <div class="col-9">
+                                                <input type="text" class="form-control form-control-sm" 
+                                                       th:name="${field.value.fieldNumber}"
+                                                       th:id="'field_' + ${field.value.fieldNumber}"
+                                                       th:placeholder="${field.value.fieldName}"
+                                                       disabled>
+                                                <small class="field-definition" 
+                                                       th:text="${field.value.fieldName + ' (' + field.value.dataType + ', Max: ' + field.value.maxLength + ')'}">
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="text-center">
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="fas fa-cogs"></i> Build Message
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Message Parser Panel -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0"><i class="fas fa-search"></i> Message Parser</h5>
+                    </div>
+                    <div class="card-body">
+                        <form id="parseForm">
+                            <div class="mb-3">
+                                <label for="rawMessage" class="form-label">Raw ISO 8583 Message</label>
+                                <textarea class="form-control raw-message" id="rawMessage" name="rawMessage" 
+                                         rows="4" placeholder="Enter raw ISO 8583 message in hex format..."></textarea>
+                            </div>
+                            <div class="text-center">
+                                <button type="submit" class="btn btn-success">
+                                    <i class="fas fa-search"></i> Parse Message
+                                </button>
+                            </div>
+                        </form>
+
+                        <div id="parsedResult" class="mt-3" style="display: none;">
+                            <h6>Parsed Message:</h6>
+                            <div id="parsedContent"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generated Message Display -->
+                <div class="card mt-3" id="resultCard" style="display: none;">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-file-alt"></i> Generated Message</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label class="form-label">MTI:</label>
+                            <div id="resultMTI" class="form-control-plaintext"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Bitmap (Hex):</label>
+                            <div id="resultBitmap" class="bitmap-display"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Raw Message:</label>
+                            <div id="resultRawMessage" class="raw-message bg-light p-2 border rounded"></div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Fields Present:</label>
+                            <div id="resultFields"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function toggleField(checkbox) {
+            const fieldId = checkbox.id.replace('check_', 'field_');
+            const fieldInput = document.getElementById(fieldId);
+            fieldInput.disabled = !checkbox.checked;
+            if (!checkbox.checked) {
+                fieldInput.value = '';
+            }
+        }
+
+        function clearForm() {
+            document.getElementById('messageForm').reset();
+            document.querySelectorAll('.form-check-input').forEach(cb => {
+                cb.checked = false;
+                toggleField(cb);
+            });
+            document.getElementById('resultCard').style.display = 'none';
+        }
+
+        function loadSampleMessage() {
+            fetch('/sample-messages')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.authorization) {
+                        document.getElementById('mti').value = data.authorization.mti;
+                        
+                        // Clear all fields first
+                        clearForm();
+                        document.getElementById('mti').value = data.authorization.mti;
+                        
+                        // Set fields
+                        Object.keys(data.authorization.fields).forEach(fieldNum => {
+                            const checkbox = document.getElementById('check_' + fieldNum);
+                            const input = document.getElementById('field_' + fieldNum);
+                            if (checkbox && input) {
+                                checkbox.checked = true;
+                                toggleField(checkbox);
+                                input.value = data.authorization.fields[fieldNum].value;
+                            }
+                        });
+                    }
+                })
+                .catch(error => {
+                    alert('Error loading sample: ' + error.message);
+                });
+        }
+
+        document.getElementById('messageForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch('/build-message', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayResult(data);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        });
+
+        document.getElementById('parseForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch('/parse-message', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    displayParsedResult(data);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                alert('Error: ' + error.message);
+            });
+        });
+
+        function displayResult(data) {
+            document.getElementById('resultMTI').textContent = data.message.mti;
+            document.getElementById('resultBitmap').textContent = data.bitmap;
+            document.getElementById('resultRawMessage').textContent = data.rawMessage;
+            
+            // Display fields
+            const fieldsHtml = Object.keys(data.message.fields)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .map(fieldNum => {
+                    const field = data.message.fields[fieldNum];
+                    return `
+                        <div class="row mb-2">
+                            <div class="col-2"><strong>Field ${fieldNum}:</strong></div>
+                            <div class="col-10">${field.value} <small class="text-muted">(${field.fieldName})</small></div>
+                        </div>
+                    `;
+                }).join('');
+            
+            document.getElementById('resultFields').innerHTML = fieldsHtml;
+            document.getElementById('resultCard').style.display = 'block';
+        }
+
+        function displayParsedResult(data) {
+            const message = data.message;
+            let html = `
+                <div class="card">
+                    <div class="card-body">
+                        <h6>MTI: ${message.mti}</h6>
+                        <h6>Bitmap: <span class="bitmap-display">${message.bitmap}</span></h6>
+                        <h6>Fields:</h6>
+                        <div class="row">
+            `;
+            
+            Object.keys(message.fields)
+                .sort((a, b) => parseInt(a) - parseInt(b))
+                .forEach(fieldNum => {
+                    const field = message.fields[fieldNum];
+                    html += `
+                        <div class="col-12 mb-2">
+                            <strong>Field ${fieldNum}:</strong> ${field.value}
+                            <br><small class="text-muted">${field.fieldName}</small>
+                        </div>
+                    `;
+                });
+            
+            html += `
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.getElementById('parsedContent').innerHTML = html;
+            document.getElementById('parsedResult').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
